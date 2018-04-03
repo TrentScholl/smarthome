@@ -1,0 +1,18 @@
+setup:
+  kibana.host: "kibana:5601"
+  dashboards.enabled: true
+filebeat.registry_file: /usr/share/filebeat/data/registry
+filebeat.config.prospectors:
+  path: ${path.config}/prospectors.d/*.yml
+  reload.enabled: false
+filebeat.modules:
+- module: system
+  syslog:
+    var.paths: ["/var/log/host/sys*log*"]
+  auth:
+    var.paths: ["/var/log/host/auth.log*"]
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  username: elastic
+  password: ${ES_PASSWORD}
+logging.to_files: false

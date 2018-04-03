@@ -1,0 +1,10 @@
+---
+version: "2.1"
+services:
+  filebeat:
+    volumes:
+      - /var/log/:/var/log/host/:ro
+
+    metricbeat:
+      volumes:
+        - /:/hostfs:ro

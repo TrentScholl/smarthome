@@ -1,0 +1,7 @@
+---
+version: "2.1"
+services:
+  metricbeat:
+    privileged: true
+    volumes:
+      - c:/:/hostfs/c/:ro

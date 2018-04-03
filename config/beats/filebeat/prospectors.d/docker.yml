@@ -1,0 +1,10 @@
+- type: log
+  paths:
+   - /hostfs/var/lib/docker/containers/*/*.log
+  json.overwrite_keys: true
+  json.keys_under_root: true
+  json.add_error_key: true
+  processors:
+  - add_docker_metadata: ~
+  close_inactive: 24h
+  close_renamed: true

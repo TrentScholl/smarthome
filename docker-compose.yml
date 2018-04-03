@@ -1,0 +1,136 @@
+---
+version: "2.1"
+services:
+  elasticsearch:
+    container_name: elasticsearch
+    hostname: elasticsearch
+    image: "docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}"
+    environment:
+      - ES_JAVA_OPTS=-Xms${ES_JVM_HEAP} -Xmx${ES_JVM_HEAP}
+      - ELASTIC_PASSWORD=${ES_PASSWORD}
+    mem_limit: ${ES_MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./config/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+      - esdata:/usr/share/elasticsearch/data
+    ports: ['9200:9200']
+    healthcheck:
+      test: ["CMD", "curl","-s" ,"-f", "-u", "elastic:${ES_PASSWORD}", "http://localhost:9200/_cat/health"]
+    restart: on-failure
+    networks: ['smarthome']
+
+  kibana:
+    container_name: kibana
+    hostname: kibana
+    image: "docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}"
+    volumes:
+      - ./config/kibana/kibana.yml:/usr/share/kibana/kibana.yml
+    ports: ['5601:5601']
+    networks: ['smarthome']
+    depends_on: ['elasticsearch']
+    restart: on-failure
+    environment:
+      - "ELASTICSEARCH_PASSWORD=${ES_PASSWORD}"
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-f", "http://localhost:5601/login"]
+      retries: 6
+
+  heartbeat:
+    container_name: heartbeat
+    hostname: heartbeat
+    image: "docker.elastic.co/beats/heartbeat:${ELASTIC_VERSION}"
+    volumes:
+      - ./config/beats/heartbeat/heartbeat.yml:/usr/share/heartbeat/heartbeat.yml
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+      kibana: { condition: service_healthy }
+    environment:
+      - "ES_PASSWORD=${ES_PASSWORD}"
+    command: heartbeat -e -strict.perms=false
+    networks: ['smarthome']
+    restart: on-failure
+
+  filebeat:
+    container_name: filebeat
+    hostname: filebeat
+    user: root
+    image: "docker.elastic.co/beats/filebeat:${ELASTIC_VERSION}"
+    volumes:
+      - ./config/beats/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - ./config/beats/filebeat/prospectors.d/:/usr/share/filebeat/prospectors.d/
+      - /var/lib/docker/containers:/hostfs/var/lib/docker/containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      - fbdata:/usr/share/filebeat/data/
+    networks: ['smarthome']
+    environment:
+      - "ES_PASSWORD=${ES_PASSWORD}"
+    command: filebeat -e -strict.perms=false
+    restart: on-failure
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+      kibana: { condition: service_healthy }
+
+  metricbeat:
+    container_name: metricbeat
+    hostname: metricbeat
+    user: root
+    image: docker.elastic.co/beats/metricbeat:${ELASTIC_VERSION}
+    volumes:
+      - ./config/beats/metricbeat/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml
+      - ./config/beats/metricbeat/modules.d/:/usr/share/metricbeat/modules.d/
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/hostfs/proc:ro
+      - /sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro
+    command: metricbeat -e -system.hostfs=/hostfs -strict.perms=false
+    networks: ['smarthome']
+    restart: on-failure
+    environment:
+      - "ES_PASSWORD=${ES_PASSWORD}"
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+      kibana: { condition: service_healthy }
+
+  packetbeat:
+    container_name: packetbeat
+    hostname: packetbeat
+    image: "docker.elastic.co/beats/packetbeat:${ELASTIC_VERSION}"
+    volumes:
+      - ./config/beats/packetbeat/packetbeat.yml:/usr/share/packetbeat/packetbeat.yml
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    network_mode: host
+    restart: on-failure
+    environment:
+      - "ES_PASSWORD=${ES_PASSWORD}"
+    command: packetbeat -e -strict.perms=false
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+      kibana: { condition: service_healthy }
+
+  configure_stack:
+    container_name: configure_stack
+    image: docker.elastic.co/beats/metricbeat:${ELASTIC_VERSION}
+    volumes:
+      - ./init/configure-stack.sh:/usr/local/bin/configure-stack.sh:ro
+      - ./init/pipelines/:/usr/local/bin/pipelines/
+      - ./init/templates/:/usr/local/bin/templates/
+    command: ['/bin/bash', '-c', 'cat /usr/local/bin/configure-stack.sh | tr -d "\r" | bash']
+    networks: ['smarthome']
+    environment:
+      - ELASTIC_VERSION=${ELASTIC_VERSION}
+      - ES_PASSWORD=${ES_PASSWORD}
+      - DEFAULT_INDEX_PATTERN=${DEFAULT_INDEX_PATTERN}
+    depends_on:
+      - elasticsearch
+      - kibana
+
+volumes:
+  esdata:
+    driver: local
+  fbdata:
+    driver: local
+networks: {smarthome: {}}
